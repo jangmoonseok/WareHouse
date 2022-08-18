@@ -10,9 +10,9 @@ WareHouse는 업무처리에 중점을 둔 타 그룹웨어와는 달리 업무�
 
 ## 개발환경
 * Server : Apache Tomcat 8.5
-* BackEnd : Java/Spring FrameWork
-* FrontEnd : JavaScript(Jquery), Jsp, BootStrap
-* DB : Oracle, MyBatis, SqlDeveloper
+* BackEnd : Spring MVC, Mybatis
+* FrontEnd : JavaScript(Jquery), Jsp, JSTL, BootStrap
+* DB : Oracle
 * ManageMent : SVN
 
 ## 일정 및 설계
@@ -36,7 +36,39 @@ WareHouse는 업무처리에 중점을 둔 타 그룹웨어와는 달리 업무�
 ### 메인대시보드
 * 오늘 하루 할 일을 기록하기위한 TodoList 와 빠른업무파악/처리를 목적으로 화면을 설계했습니다.
 ![메인대시보드](https://user-images.githubusercontent.com/64582209/184804912-79168611-4cea-46fa-a814-75544221d639.JPG)
+* 핵심기능
+  * 비동기통신을 활용한 목록조회
+  ```java
+  //Rest Controller 소스코드
+  	/**
+	 * @param tab : client가 누른 탭
+	 * @param session : loginUser를 가져오기위한 session
+	 * @return
+	 */
+	@RequestMapping("/getMyWorkList")
+	public ResponseEntity<List<WorkVO>> getMyWorkList(String tab, HttpSession session){
+		ResponseEntity<List<WorkVO>> result = null;
 
+		EmployeeVO loginUser = (EmployeeVO)session.getAttribute("loginUser");
+		List<WorkVO> workList = null;
+
+		try {
+			if(tab.equals("wait")) {
+				workList = homeService.waitMyWork(loginUser.getEno());
+			}else if(tab.equals("cooper")) {
+				workList = homeService.cooperReqWork(loginUser.getEno());
+			}else {
+				workList = homeService.proxyReqWork(loginUser.getEno());
+			}
+			result = new ResponseEntity<List<WorkVO>>(workList, HttpStatus.OK);
+		} catch (Exception e) {
+			e.printStackTrace();
+			result = new ResponseEntity<List<WorkVO>>(HttpStatus.INTERNAL_SERVER_ERROR);
+		}
+
+		return result;
+	}
+  ```
 
 ### 업무대시보드
 * 업무의 마감일을 지키게할 목적으로 화면을 설계했습니다.
@@ -308,7 +340,9 @@ WareHouse는 업무처리에 중점을 둔 타 그룹웨어와는 달리 업무�
   <select id="selectRecommendWorkList" resultType="work">
 		select distinct g.wcode, g.wtitle, g.wdate, g.wend, g.wopen,walarm, g.eno, g.wprogress, g.wstatus, g.classcode, g.wcontent, h.viewcnt
 		  from hashtag f, work g, knowhow h,
-		       (select distinct b.tagcontent
+		       (
+		       <!-- 노하우 해시태그 -->
+		       select distinct b.tagcontent
 		          from(select regexp_substr(a.langlist, '[^ ]+', 1, level) as tagcontent
 		                 from (select tagcontent as langlist
 		                         from hashtag
@@ -317,20 +351,21 @@ WareHouse는 업무처리에 중점을 둔 타 그룹웨어와는 달리 업무�
 			   		  connect by level <= length(regexp_replace(a.langlist, '[^ ]+','')) + 1) b
 			   		  ]]>
 				 where not b.tagcontent like '%'||'년차'||'%'
-
+			<!-- 노하우 해시태그 끝-->
 				intersect
-
-				select distinct d.tagcontent
-				  from(select regexp_substr(c.tagcontent, '[^ ]+', 1, level) as tagcontent
-		                 from (select b.tagcontent
-		                         from work a, hashtag b
-				        where a.wcode = b.hashno
-						  and a.wcode = #{wcode}
-						  and a.wstatus !='완료') c
-						     <![CDATA[
-					  connect by level <= length(regexp_replace(c.tagcontent, '[^ ]+','')) + 1) d
-					   ]]>
-				 where not d.tagcontent like '%'||'년차'||'%'
+			<!-- 해당 업무 해시태그 -->
+			select distinct d.tagcontent
+			  from(select regexp_substr(c.tagcontent, '[^ ]+', 1, level) as tagcontent
+			 from (select b.tagcontent
+				 from work a, hashtag b
+				where a.wcode = b.hashno
+					  and a.wcode = #{wcode}
+					  and a.wstatus !='완료') c
+					     <![CDATA[
+				  connect by level <= length(regexp_replace(c.tagcontent, '[^ ]+','')) + 1) d
+				   ]]>
+			 where not d.tagcontent like '%'||'년차'||'%'
+			 <!-- 해당 업무 해시태그 끝-->
 				 ) e
 		 where f.hashno = g.wcode
 		   and g.wcode = h.wcode
